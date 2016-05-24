@@ -62,10 +62,15 @@ changed its visibility status is passed as `$event.inViewTarget`
 An additional attribute `in-view-options` can be speficied with an object value
 containing:
 
-- `offset`: a number (in pixels) indicating how much to move down (or up if negative) the top position of the element. As of version 1.5.1, if the number is suffixed with `%` then the offset is applied as a percentage instead of pixels.
-position of the element for the purpose of inview testing;
-- `offsetTop` and `offsetBottom`: two numbers representing the top and bottom
-offset respectively; this may virtually change the height of the element for inview testing;
+- `offset`: a number (in pixels) indicating how much to move down (or up if negative) the top
+position of the element. As of version 1.5.1, if the number is suffixed with `%` then the offset is
+applied as a percentage instead of pixels. position of the element for the purpose of inview
+testing. If there is only one number with `%` then offset is assumed to be top/bottom
+(but not left/right), if two numbers with `$` separated with a space, then the offsets are
+top/bottom and left/right respectively. If not using `%` then offset should be an array. Here are
+some examples: `[100, 200, 300, 400]`, `25%`, `25% 50%`;
+- `offsetTop`, `offsetBottom`, `offsetLeft` and `offsetRight`: two numbers representing the top and
+bottom offset respectively; this may virtually change the height of the element for inview testing;
 - `debounce`: a number indicating a millisecond value of debounce which will delay
 firing the in-view event until that number of millisecond is passed without a scrolling
 event happening.

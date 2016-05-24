@@ -31,25 +31,33 @@ angularInviewModule = angular.module('angular-inview', [])
 			inViewFunc = $parse(attrs.inView)
 			item =
 				element: element
-				wasInView: no
+				wasInViewVertical: no
+				wasInViewHorizontal: no
 				offset: 0
 				customDebouncedCheck: null
 				# In the callback expression, the following variables will be provided:
 				# - `$event`: the DOM event that triggered the inView callback.
 				# The inView DOM element will be passed in `$event.inViewTarget`.
 				# - `$inview`: boolean indicating if the element is in view
-				# - `$inviewpart`: string either 'top', 'bottom' or 'both'
-				callback: ($event={}, $inview, $inviewpart) -> scope.$evalAsync =>
+				# - `$inviewpartVertical`: string either 'top', 'bottom' or 'both'
+				# - `inviewpartHorizontal`: string either 'left', 'right' or 'both'
+				callback: ($event={}, $inview, $inviewpartVertical, $inviewpartHorizontal) -> scope.$evalAsync =>
 					$event.inViewTarget = element[0]
 					inViewFunc scope,
 						'$event': $event
 						'$inview': $inview
-						'$inviewpart': $inviewpart
+						'$inviewpartVertical': $inviewpartVertical
+						'$inviewpartHorizontal': $inviewpartHorizontal
 			# An additional `in-view-options` attribute can be specified to set offsets
 			# that will displace the inView calculation and a debounce to slow down updates
 			# via scrolling events.
 			if attrs.inViewOptions? and options = scope.$eval(attrs.inViewOptions)
-				item.offset = options.offset || [options.offsetTop or 0, options.offsetBottom or 0]
+				item.offset = options.offset || [
+					options.offsetTop or 0,
+					options.offsetBottom or 0,
+					options.offsetLeft or 0,
+					options.offsetRight or 0
+				]
 				if options.debounce
 					item.customDebouncedCheck = debounce ((event) -> checkInView [item], element[0], event), options.debounce
 			# A series of checks are set up to verify the status of the element visibility.
@@ -103,7 +111,8 @@ angularInviewModule = angular.module('angular-inview', [])
 # {
 # 	element: <angular.element>,
 # 	offset: <number>,
-# 	wasInView: <bool>,
+# 	wasInViewVertical: <bool>,
+# 	wasInViewHorizontal: <bool>,
 # 	callback: <funciton>
 # }
 # ```
@@ -143,20 +152,27 @@ unbindWindowEvents = ->
 
 # ### InView checks
 # This method will call the user defined callback with the proper parameters if neccessary.
-triggerInViewCallback = (event, item, inview, isTopVisible, isBottomVisible) ->
+triggerInViewCallback = (event, item, inview, isTopVisible, isBottomVisible, isLeftVisible, isRightVisible) ->
 	if inview
 		elOffsetTop = getBoundingClientRect(item.element[0]).top + window.pageYOffset
-		inviewpart = (isTopVisible and isBottomVisible and 'neither') or (isTopVisible and 'top') or (isBottomVisible and 'bottom') or 'both'
+		elOffsetLeft = getBoundingClientRect(item.element[0]).left + window.pageXOffset
+		inviewpartVertical = (isTopVisible and isBottomVisible and 'neither') or (isTopVisible and 'top') or (isBottomVisible and 'bottom') or 'both'
+		inviewpartHorizontal = (isLeftVisible and isRightVisible and 'neither') or (isLeftVisible and 'left') or (isRightVisible and 'right') or 'both'
 		# The callback will be called only if a relevant value has changed.
 		# However, if the element changed it's position (for example if it has been
 		# pushed down by dynamically loaded content), the callback will be called anyway.
-		unless item.wasInView and item.wasInView == inviewpart and elOffsetTop == item.lastOffsetTop
-			item.lastOffsetTop = elOffsetTop
-			item.wasInView = inviewpart
-			item.callback event, yes, inviewpart
-	else if item.wasInView
-		item.wasInView = no
-		item.callback event, no
+		unless item.wasInViewVertical and
+			item.wasInViewVertical == inviewpartVertical and
+			item.wasInViewHorizontal == inviewpartHorizontal and
+			elOffsetTop == item.lastOffsetTop
+				item.lastOffsetTop = elOffsetTop
+				item.wasInViewVertical = inviewpartVertical
+				item.wasInViewHorizontal = inviewpartHorizontal
+				item.callback event, yes, inviewpartVertical, inviewpartHorizontal
+	else if item.wasInViewVertical or inviewpartHorizontal
+		item.wasInViewVertical = no
+		item.inviewpartHorizontal = no
+		item.callback event, no, no
 
 # The main function to check if the given items are in view relative to the provided container.
 checkInView = (items, container, event) ->
@@ -164,6 +180,8 @@ checkInView = (items, container, event) ->
 	viewport =
 		top: 0
 		bottom: getViewportHeight()
+		left: 0
+		right: getViewportWidth()
 	# Restrict viewport if a container is specified.
 	if container and container isnt window
 		bounds = getBoundingClientRect container
@@ -171,20 +189,27 @@ checkInView = (items, container, event) ->
 		if bounds.top > viewport.bottom or bounds.bottom < viewport.top
 			triggerInViewCallback(event, item, false) for item in items
 			return
+		if bounds.left > viewport.right or bounds.right < viewport.left
+			triggerInViewCallback(event, item, false) for item in items
+			return
 		# Actual viewport restriction.
 		viewport.top = bounds.top if bounds.top > viewport.top
 		viewport.bottom = bounds.bottom if bounds.bottom < viewport.bottom
+		viewport.left = bounds.left if bounds.left > viewport.left
+		viewport.right = bounds.right if bounds.right < viewport.right
 	# Calculate inview status for each item.
 	for item in items
 		# Get the bounding top and bottom of the element in the viewport.
 		element = item.element[0]
 		bounds = getBoundingClientRect element
 		# Apply offset.
-		boundsTop = bounds.top + if offsetIsPercentage(item.offset) then getOffsetFromPercentage(bounds, item.offset) else parseInt(item.offset?[0] ? item.offset)
-		boundsBottom = bounds.bottom + if offsetIsPercentage(item.offset) then getOffsetFromPercentage(bounds, item.offset) else parseInt(item.offset?[1] ? item.offset)
+		boundsTop = bounds.top + if offsetIsPercentage(item.offset) then getOffsetFromPercentage(bounds, item.offset, false) else parseInt(item.offset?[0] ? item.offset)
+		boundsBottom = bounds.bottom + if offsetIsPercentage(item.offset) then getOffsetFromPercentage(bounds, item.offset, false) else parseInt(item.offset?[1] ? item.offset)
+		boundsLeft = bounds.left + if offsetIsPercentage(item.offset) then getOffsetFromPercentage(bounds, item.offset, true) else parseInt(item.offset?[2] ? item.offset)
+		boundsRight = bounds.right + if offsetIsPercentage(item.offset) then getOffsetFromPercentage(bounds, item.offset, true) else parseInt(item.offset?[3] ? item.offset)
 		# Calculate parts in view.
-		if boundsTop < viewport.bottom and boundsBottom >= viewport.top
-			triggerInViewCallback(event, item, true, boundsBottom > viewport.bottom, boundsTop < viewport.top)
+		if boundsTop < viewport.bottom and boundsBottom >= viewport.top and boundsLeft < viewport.right and boundsRight >= viewport.left
+			triggerInViewCallback(event, item, true, boundsBottom > viewport.bottom, boundsTop < viewport.top, boundsRight > viewport.right, boundsLeft < viewport.left)
 		else
 			triggerInViewCallback(event, item, false)
 
@@ -195,9 +220,16 @@ offsetIsPercentage = (offset) ->
 	typeof offset is 'string' and offset.slice(-1) is '%'
 
 # Calculates the offset in pixels based on the percentage provided
-getOffsetFromPercentage = (bounds, offsetPercentage) ->
-	percentage = offsetPercentage.substring 0, offsetPercentage.length - 1
-	(bounds.bottom - bounds.top) *  (percentage / 100)
+getOffsetFromPercentage = (bounds, offsetPercentage, horizontal) ->
+	settings = offsetPercentage.split(' ');
+	if settings.length == 1
+		settings[1] = '0%';
+	percentageVertical = settings[0].substring 0, settings[0].length - 1
+	percentageHorizontal = settings[1].substring 0, settings[1].length - 1
+	if horizontal
+		return (bounds.bottom - bounds.top) * (percentageVertical / 100)
+	else
+		return (bounds.right - bounds.left) * (percentageHorizontal / 100)
 
 # Returns the height of the window viewport
 getViewportHeight = ->
@@ -208,21 +240,35 @@ getViewportHeight = ->
 		height = if mode is 'CSS1Compat' then document.documentElement.clientHeight else document.body.clientHeight
 	height
 
+# Returns the width of the window viewport
+getViewportWidth = ->
+	width = window.innerWidth
+	return width if width
+	mode = document.compatMode
+	if mode or not $?.support?.boxModel
+		width = if mode is 'CSS1Compat' then document.documentElement.clientWidth else document.body.clientWidth
+	width
+
 # Polyfill for `getBoundingClientRect`
 getBoundingClientRect = (element) ->
 	return element.getBoundingClientRect() if element.getBoundingClientRect?
 	top = 0
+	left = 0
 	el = element
 	while el
 		top += el.offsetTop
+		left += el.offsetLeft
 		el = el.offsetParent
 	parent = element.parentElement
 	while parent
 		top -= parent.scrollTop if parent.scrollTop?
+		left -= parent.scrollLeft if parent.scrollLeft?
 		parent = parent.parentElement
 	return {
 		top: top
 		bottom: top + element.offsetHeight
+		left: left
+		right: left + element.offsetWidth
 	}
 
 # Debounce a function.
